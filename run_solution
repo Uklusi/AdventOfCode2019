@@ -1,0 +1,7 @@
+#! /bin/bash
+
+daynum=$(printf %02d $1)
+folder="Day_$daynum"
+cd $folder
+python3 ./part$2.py
+cd ..
