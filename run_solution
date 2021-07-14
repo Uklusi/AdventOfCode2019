@@ -4,4 +4,11 @@ daynum=$(printf %02d $1)
 folder="Day_$daynum"
 cd $folder
 python3 ./part$2.py
+
+if [ $2 -eq "1" ]; then
+    if [ ! -s part2.py ]; then
+        cat part1.py | sed 's/partNumber = "1"/partNumber = "2"/g' > part2.py
+    fi
+fi
+
 cd ..
