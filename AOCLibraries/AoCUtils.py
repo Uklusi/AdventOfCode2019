@@ -147,11 +147,13 @@ class _BaseR2Class():
     """
     def __init__(self) -> None:
         self.reverseY = False
-        self.upVertSign = False
+        self.upVertSign = 1
         self.x = 0
         self.y = 0
     
     def stdcoords(self, inverted: bool = False) -> tuple[int, int]:
+        if inverted:
+            return (self.y, self.x)
         return (self.x, self.y)
 
     def __hash__(self) -> int:
@@ -180,11 +182,15 @@ class _BaseR2Class():
         return self.stdcoords(inverted=inverted)
 
     def __str__(self) -> str:
-        return str(self.stdcoords())
+        return str(self.coords())
         
     def __repr__(self) -> str:
         return str(self)
-      
+    
+    def debug(self):
+        (x, y) = self.stdcoords()
+        return f"{type(self)}(x: {x}, y: {y}) - reverseY: {self.reverseY}"
+
     def copy(self: _BaseR2Generic) -> _BaseR2Generic:
         return copy(self)
     
@@ -198,7 +204,7 @@ class Vector(_BaseR2Class):
     and the vectorial space Z^2 underneath (class Vector)
     (Yes, I know Z is not a field and Position is technically a module, but let it slide)
 
-    Syntax is Vector(x, y, reverseY=False). [Hashable]
+    Syntax is Vector(x, y, reverseY=True). [Hashable]
 
     Vector has properties vx and vy, in orded to distinguish them from Position's x and y
     reverseY=True means that going down increases the y coordinate.
@@ -218,7 +224,7 @@ class Vector(_BaseR2Class):
         self,
         x: int = 0,
         y: int = 0,
-        reverseY: bool = False
+        reverseY: bool = True
     ) -> None:
         self.upVertSign = -1 if reverseY else 1
         self.reverseY = reverseY
@@ -289,7 +295,7 @@ class Vector(_BaseR2Class):
         else:
             return 3
 
-def VectorDir(direction: DirectionType, n: int = 1, reverseY: bool = False) -> Vector:
+def VectorDir(direction: DirectionType, n: int = 1, reverseY: bool = True) -> Vector:
     """
     Helper function for class Vector
     Used to construct Vectors starting with a direction and the number of steps
@@ -317,7 +323,7 @@ class Position(_BaseR2Class):
 
     This class is complemented by the Vector class, which is a prerequisite for this class.
 
-    Syntax is Position(x, y, reverseY=False). [Hashable]
+    Syntax is Position(x, y, reverseY=True). [Hashable]
 
     Position has properties x and y (the coordinates)
     reverseY=True means that going down increases the y coordinate.
@@ -337,7 +343,7 @@ class Position(_BaseR2Class):
         self,
         x: int = 0,
         y: int = 0,
-        reverseY: bool = False
+        reverseY: bool = True
     ) -> None:
         self.x = x
         self.y = y
@@ -397,7 +403,7 @@ class Agent(Position):
     Agent class: represents a movable entity in a 2D grid.
     Inherits from Position
 
-    Syntax is Agent(x, y, direction=0, reverseY=False) [not hashable]
+    Syntax is Agent(x, y, direction=0, reverseY=True) [not hashable]
 
     Agent is mutable, so hash is not implemented.
     An agent can turnRight, turnLeft, turnReverse or turn(numOfRightTurns)
@@ -410,7 +416,7 @@ class Agent(Position):
         x: int = 0,
         y: int = 0,
         direction: DirectionType = 0,
-        reverseY: bool = False
+        reverseY: bool = True
     ) -> None:
         super().__init__(x, y, reverseY=reverseY)
         self.direction = dirToNum(direction)
@@ -473,7 +479,7 @@ class MapPosition(Position):
 
     Syntax is MapPosition(x, y, reverseY=True, frame=None, xmin=-inf, xmax=inf, ymin=-inf, xmax=inf, occupied=lambda p: False) [Hashable]
 
-    A MapPosition assumes reverseY, contrary to the Position class, because usually a map is limited.
+    A MapPosition assumes reverseY, because usually a map is limited.
     The limits can be specified via frame (a view of the observable portion of the map),
     setting min to 0 and max to the effective max coordinate in the frame,
     or via the parameters. Occupied is a function that takes a MapPosition as input
@@ -893,7 +899,7 @@ def _sliceToRange(item: slice, minRange: int, maxRange: int, step: int = 1) -> r
     """
     Helper method to transform a slice object into a range object
     """
-    (start, stop, oldStep) = cast(tuple[Union[int, None], ...], (item.start, item.stop, item.step))
+    (start, stop, oldStep) = cast(tuple[Optional[int], ...], (item.start, item.stop, item.step))
     newStep = oldStep or step
     newStart = start or minRange
     newStop = stop or maxRange
@@ -1043,15 +1049,19 @@ class Map():
     """
     Map class: a window on the state of a Position-based 2D plane representation.
 
-    Syntax: Map(visual, frame=None, xmin, ymin, xmax, ymax) [not hashable]
+    Syntax: Map(visual, frame=None, xmin, ymin, xmax, ymax, reverseY=True) [not hashable]
 
     Map uses the frame, if available, or the min and max parameters otherwise,
     to determine the looking zone (default 10×10, starting from (0,0)).
     If frame is not None, xmin and ymin are assumed 0 and the max come from frame.
     visual is the key of the Map: visual takes a Position
     and returns the character to display in that position.
+    If the reverseY parameter is True (default), positions with higher y coordinates
+    are placed in lower rows
+
     visual is called once for each position in the frame when requesting an image.
-    The image is requested via slicing or the image() method (returning an Image object) or via str (returning str(map.image()))
+    The image is requested via slicing or the image() method (returning an Image object)
+    or via str (returning str(map.image()))
     """
     def __init__(
             self,
@@ -1161,6 +1171,10 @@ def recreatePath(
     goal: _PositionGeneric,
     pathTrace: dict[_PositionGeneric, _PositionGeneric]
 ) -> list[_PositionGeneric]:
+    """
+    Helper function used to determine the path taken by the A* algorithm
+    from start to goal. The path is indicated as a series of consecutive positions.
+    """
     ret = [goal]
     current = goal
     while current != start:
@@ -1201,13 +1215,16 @@ def aStar(
     """
     A* Traversing algorithm.
 
-    Usage: aStar(start, goal, *distanceFunction, *includeCorners)
+    Usage: aStar(start, goal, *distanceFunction, *includeCorners, *returnPath)
 
     Assuming start and goal as instances of class Position
     or at least assuming that they are ordered, hashable and
     with a method called adjacent with parameter includeCorners.
     If called without specifiyng a distance fuction,
     it also assumes that there is a method called distance(otherPosition)
+
+    If returnPath is True returns the path taken by the algorithm to reach the goal,
+    otherwise (default case) returns only the path length.
     """
     if isinstance(start, MapAgent):
         start = start.mapPosition()
